@@ -1066,14 +1066,29 @@ func (bs *BlockService) GetBlocksFromHeight(startHeight, limit uint32, withAttac
 
 // GetLastBlock return the last pushed block from block state storage
 func (bs *BlockService) GetLastBlock() (*model.Block, error) {
+	// var (
+	// 	lastBlock model.Block
+	// 	err       = bs.BlockStateStorage.GetItem(nil, &lastBlock)
+	// )
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return &lastBlock, nil
 	var (
-		lastBlock model.Block
-		err       = bs.BlockStateStorage.GetItem(nil, &lastBlock)
+		lastBlock *model.Block
+		err       error
+		// err       = bs.BlockStateStorage.GetItem(nil, &lastBlock)
 	)
+
+	lastBlock, err = commonUtils.GetLastBlock(bs.QueryExecutor, bs.BlockQuery)
+	if err != nil {
+		return nil, blocker.NewBlocker(blocker.DBErr, err.Error())
+	}
+	err = bs.PopulateBlockData(lastBlock)
 	if err != nil {
 		return nil, err
 	}
-	return &lastBlock, nil
+	return lastBlock, nil
 }
 
 // GetLastBlockCacheFormat return the last pushed block in storage.BlockCacheObject format
