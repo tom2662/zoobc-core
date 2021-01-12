@@ -1065,14 +1065,29 @@ func (bs *BlockService) GetBlocksFromHeight(startHeight, limit uint32, withAttac
 
 // GetLastBlock return the last pushed block from block state storage
 func (bs *BlockService) GetLastBlock() (*model.Block, error) {
+	// STEF Always returning value from db (mocking blockcachestorage for testing)
+	// var (
+	// 	lastBlock model.Block
+	// 	err       = bs.BlockStateStorage.GetItem(nil, &lastBlock)
+	// )
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// return &lastBlock, nil
 	var (
-		lastBlock model.Block
-		err       = bs.BlockStateStorage.GetItem(nil, &lastBlock)
+		lastBlock *model.Block
+		err       error
 	)
+
+	lastBlock, err = commonUtils.GetLastBlock(bs.QueryExecutor, bs.BlockQuery)
+	if err != nil {
+		return nil, blocker.NewBlocker(blocker.DBErr, err.Error())
+	}
+	err = bs.PopulateBlockData(lastBlock)
 	if err != nil {
 		return nil, err
 	}
-	return &lastBlock, nil
+	return lastBlock, nil
 }
 
 // GetLastBlockCacheFormat return the last pushed block in storage.BlockCacheObject format
@@ -1560,11 +1575,13 @@ func (bs *BlockService) PopOffToBlock(commonBlock *model.Block) ([]*model.Block,
 	// make sure this block contains all its attributes (transaction, receipts)
 	var lastBlock, err = bs.GetLastBlock()
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 151)
 		return nil, err
 	}
 	minRollbackHeight := commonUtils.GetMinRollbackHeight(lastBlock.Height)
 
 	if commonBlock.Height < minRollbackHeight {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 152)
 		// TODO: handle it appropriately and analyze the effect if this returning empty element in the further processfork process
 		bs.Logger.Warn("the node blockchain detects hardfork, please manually delete the database to recover")
 		return nil, nil
@@ -1572,6 +1589,7 @@ func (bs *BlockService) PopOffToBlock(commonBlock *model.Block) ([]*model.Block,
 
 	_, err = bs.GetBlockByID(commonBlock.ID, false)
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 151)
 		return nil, blocker.NewBlocker(blocker.BlockNotFoundErr, fmt.Sprintf("the common block is not found %v", commonBlock.ID))
 	}
 
@@ -1579,7 +1597,9 @@ func (bs *BlockService) PopOffToBlock(commonBlock *model.Block) ([]*model.Block,
 		poppedBlocks []*model.Block
 		block        = lastBlock
 	)
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 151)
 	for block.ID != commonBlock.ID && block.ID != bs.Chaintype.GetGenesisBlockID() {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 152)
 		poppedBlocks = append(poppedBlocks, block)
 		// make sure this block contains all its attributes (transaction, receipts)
 		block, err = bs.GetBlockByHeight(block.Height - 1)
@@ -1589,8 +1609,10 @@ func (bs *BlockService) PopOffToBlock(commonBlock *model.Block) ([]*model.Block,
 	}
 	// Backup existing transactions from mempool before rollback
 	// note: rollback process do inside Backup Mempools func
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 153)
 	err = bs.MempoolService.BackupMempools(commonBlock)
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 154)
 		return nil, err
 	}
 
@@ -1598,15 +1620,20 @@ func (bs *BlockService) PopOffToBlock(commonBlock *model.Block) ([]*model.Block,
 	// Note: Make sure every time calling query insert & rollback block, calling this SetItem too
 	err = bs.UpdateLastBlockCache(nil)
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 155)
 		return nil, err
 	}
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 156)
 	err = bs.BlocksStorage.PopTo(commonBlock.Height)
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 157)
 		return nil, err
 	}
 	// update cache next node admission timestamp after rollback
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 158)
 	err = bs.NodeRegistrationService.UpdateNextNodeAdmissionCache(nil)
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 159)
 		return nil, err
 	}
 	// TODO: here we should also delete all snapshot files relative to the block manifests being rolled back during derived tables
@@ -1616,26 +1643,35 @@ func (bs *BlockService) PopOffToBlock(commonBlock *model.Block) ([]*model.Block,
 	//
 
 	// remove peer memoization
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 161)
 	err = bs.ScrambleNodeService.PopOffScrambleToHeight(commonBlock.Height)
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 162)
 		return nil, err
 	}
 	/*
 		Need to clearing some cache storage that affected
 	*/
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 163)
 	bs.BlockPoolService.ClearBlockPool()
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 164)
 	bs.ReceiptService.ClearCache()
 
 	// re-initialize node-registry cache
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 165)
 	err = bs.NodeRegistrationService.InitializeCache()
 	if err != nil {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 166)
 		return nil, err
 	}
 	// Need to sort ascending since was descended in above by Height
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 167)
 	sort.Slice(poppedBlocks, func(i, j int) bool {
+		monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 168)
 		return poppedBlocks[i].GetHeight() < poppedBlocks[j].GetHeight()
 	})
 
+	monitoring.IncrementMainchainDownloadCycleDebugger(bs.Chaintype, 169)
 	return poppedBlocks, nil
 }
 
