@@ -118,6 +118,7 @@ func (tx *NodeRegistration) ApplyConfirmed(blockTimestamp int64) error {
 		prevNodeFound                                               bool
 		err                                                         error
 		row                                                         *sql.Row
+		nodeID                                                      = tx.ID
 	)
 	if tx.Height > 0 {
 		registrationStatus = uint32(model.NodeRegistrationState_NodeQueued)
@@ -161,6 +162,8 @@ func (tx *NodeRegistration) ApplyConfirmed(blockTimestamp int64) error {
 		// if there is a previously deleted node registration, set its latest status to false, to avoid duplicates
 		clearDeletedNodeRegistrationQ := tx.NodeRegistrationQuery.ClearDeletedNodeRegistration(&prevNodeRegistrationByPubKey)
 		queries = append(queries, clearDeletedNodeRegistrationQ...)
+		// don't change node id if we are re-registering previously deleted node
+		nodeID = prevNodeRegistrationByPubKey.NodeID
 	} else {
 		// check if this account previously deleted a registered node. in that case, set the 'deleted' one's latest to 0
 		// check for account address duplication (accounts can register one node at the time)
@@ -185,7 +188,7 @@ func (tx *NodeRegistration) ApplyConfirmed(blockTimestamp int64) error {
 
 	// if a node with this public key has been previously deleted, update its owner to the new registerer
 	nodeRegistration := &model.NodeRegistration{
-		NodeID:             tx.ID,
+		NodeID:             nodeID,
 		LockedBalance:      tx.Body.LockedBalance,
 		Height:             tx.Height,
 		RegistrationHeight: tx.Height,
@@ -299,8 +302,6 @@ func (tx *NodeRegistration) Validate(dbTx bool) error {
 			return blocker.NewBlocker(blocker.DBErr, err.Error())
 		}
 	} else {
-		// in case a node with same pub key exists, validation must pass only if that node is tagged as deleted
-		// if any other state validation should fail
 		if nodeRegByNodePub.GetRegistrationStatus() != uint32(model.NodeRegistrationState_NodeDeleted) {
 			return blocker.NewBlocker(blocker.AuthErr, "NodeAlreadyRegistered")
 		}

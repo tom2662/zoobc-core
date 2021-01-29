@@ -270,24 +270,17 @@ func (bss *BlocksmithStrategySpine) CalculateCumulativeDifficulty(prevBlock, blo
 // main blocks), or from from spine_pub_keys if spine blocks
 func (bss *BlocksmithStrategySpine) ActiveNodeRegistryGetAllItems(block *model.Block) (activeNodeRegistry []storage.NodeRegistry, err error) {
 	var (
-		spinePubKeys []*model.SpinePublicKey
+		spinePubKeys   []*model.SpinePublicKey
+		blockSpineKeys = block.GetSpinePublicKeys()
 	)
 	spinePubKeys, err = bss.GetActiveSpinePublicKeysByBlockHeight(block.GetHeight())
 	if err != nil {
 		return
 	}
 	// update local spine pub keys with the ones in downloaded block in case there are newly added/removed nodes from registry since prev
-	// block
-	for _, blockPubKey := range block.GetSpinePublicKeys() {
+	// block.
+	for _, blockPubKey := range blockSpineKeys {
 		switch blockPubKey.GetPublicKeyAction() {
-		case model.SpinePublicKeyAction_RemoveKey:
-			for idx, spinePubKey := range spinePubKeys {
-				if blockPubKey.GetNodeID() == spinePubKey.GetNodeID() {
-					// remove element from spinePubKeys
-					spinePubKeys = append(spinePubKeys[:idx], spinePubKeys[idx+1:]...)
-					break
-				}
-			}
 		case model.SpinePublicKeyAction_AddKey:
 			var found = false
 			for idx, spinePubKey := range spinePubKeys {
@@ -302,8 +295,15 @@ func (bss *BlocksmithStrategySpine) ActiveNodeRegistryGetAllItems(block *model.B
 				// add new spine pub key (node registered after previous spine block)
 				spinePubKeys = append(spinePubKeys, blockPubKey)
 			}
+		case model.SpinePublicKeyAction_RemoveKey:
+			for idx, spinePubKey := range spinePubKeys {
+				if blockPubKey.GetNodeID() == spinePubKey.GetNodeID() {
+					// remove element from spinePubKeys
+					spinePubKeys = append(spinePubKeys[:idx], spinePubKeys[idx+1:]...)
+					break
+				}
+			}
 		}
-
 	}
 	// sort by nodeID (same sort as in ActiveNodeRegistryCacheStorage.activeNodeRegistry)
 	sort.SliceStable(spinePubKeys, func(i, j int) bool {
